@@ -1,0 +1,5 @@
+#!/system/bin/sh
+base=/system
+export CLASSPATH=$base/framework/dk_test_jar.jar
+exec dk_test_bin -Xzygote $base/bin com.test.TestApp
+
