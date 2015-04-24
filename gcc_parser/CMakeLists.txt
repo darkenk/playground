@@ -1,0 +1,11 @@
+project(gcc_parser)
+cmake_minimum_required(VERSION 2.8)
+aux_source_directory(. SRC_LIST)
+add_definitions(-std=c++11)
+add_executable(${PROJECT_NAME} ${SRC_LIST})
+
+option(ENABLE_TESTS "enable tests" ON)
+if(ENABLE_TESTS)
+    add_subdirectory(libs/gtest-1.7.0)
+    add_subdirectory(tests)
+endif()
