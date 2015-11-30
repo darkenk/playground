@@ -1,155 +1,128 @@
-#include <iostream>
-#include <cstdint>
-#define EGL_EGLEXT_PROTOTYPES
+#include <cassert>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include "eglwrapper.hpp"
+
 #include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GLES/gl.h>
-//#include <gui/Surface.h>
+#include <xcb/xcb.h>
+#include <X11/Xlib-xcb.h>
+#include <unistd.h>
+#include <GLES2/gl2.h>
+#include "triangleprogram.hpp"
 
 using namespace std;
-//using namespace android;
 
-class X11Wrapper
-{
-public:
-    X11Wrapper(uint32_t width, uint32_t height) {
-        mDisplay = XOpenDisplay(NULL);
-        if (not mDisplay) {
-            cerr << "mDisplay initialization failed";
-        }
-        mRoot = DefaultRootWindow(mDisplay);
-        XSetWindowAttributes swa;
-        swa.event_mask = ExposureMask | PointerMotionMask | KeyPressMask;
-        mWindow = XCreateWindow(mDisplay, mRoot,
-                                0, 0, width, height,
-                                0, CopyFromParent, InputOutput,
-                                CopyFromParent, CWEventMask, &swa);
-        XMapWindow(mDisplay, mWindow);
-        XFlush(mDisplay);
-    }
+void
+error_fatal(const char* format, ...) {
+    printf("error: ");
 
-    Display* getDisplay() { return mDisplay; }
-    Window getWindow() { return mWindow; }
+    va_list va;
+    va_start(va, format);
+    vprintf(format, va);
+    va_end(va);
 
-    Pixmap mPixmap;
-private:
-    Display* mDisplay;
-    Window mRoot;
-    Window mWindow;
+    printf("\n");
+    exit(1);
+}
+
+const uint32_t xcb_window_attrib_mask = XCB_CW_EVENT_MASK;
+const uint32_t xcb_window_attrib_list[] = {
+    XCB_EVENT_MASK_BUTTON_PRESS,
+    XCB_EVENT_MASK_EXPOSURE,
+    XCB_EVENT_MASK_KEY_PRESS,
 };
 
-class X11Backend
-{
-public:
-    X11Backend(uint32_t width, uint32_t height) {
-        //LOGVP("W: %d H: %d", width, height);
-        mWidth = width;
-        mHeight = height;
-        mDisplay = XOpenDisplay(NULL);
-        if (not mDisplay) {
-            //Exception(__FUNCTION__);
-        }
-        mRoot = DefaultRootWindow(mDisplay);
-        mWindow = XCreateSimpleWindow(mDisplay, mRoot, 0, 0, mWidth, mHeight, 0, 0, 0);
-        XMapWindow(mDisplay, mWindow);
-        XFlush(mDisplay);
-        mPixmap = XCreatePixmap(mDisplay, mWindow, mWidth, mHeight, sDepth);
-        XGCValues gcvalues;
-        mGraphicContext = XCreateGC(mDisplay, mPixmap, 0, &gcvalues);
+void
+setup_x(const char *display_name,
+        int window_x,
+        int window_y,
+        int window_width,
+        int window_height,
+        Display** out_display,
+        xcb_connection_t** out_connection,
+        int* out_screen,
+        xcb_window_t* out_window) {
+
+    xcb_generic_error_t* error;
+
+    Display* display = XOpenDisplay(display_name);
+    if (!display)
+        error_fatal("XOpenDisplay() failed");
+
+    xcb_connection_t *connection = XGetXCBConnection(display);
+    if (!connection)
+        error_fatal("XGetXCBConnection() failed");
+    if (xcb_connection_has_error(connection))
+        error_fatal("errors occured in connecting to X server");
+
+    const xcb_setup_t* setup = xcb_get_setup(connection);
+    xcb_screen_t* screen = xcb_setup_roots_iterator(setup).data;
+    assert(screen != 0);
+
+    xcb_window_t window = xcb_generate_id(connection);
+    if (window <= 0)
+        error_fatal("failed to generate X window id");
+
+    xcb_void_cookie_t create_cookie = xcb_create_window_checked(
+        connection,
+        XCB_COPY_FROM_PARENT, // depth
+        window,
+        screen->root, // parent window
+        window_x,
+        window_y,
+        window_width,
+        window_height,
+        0, // border width
+        XCB_WINDOW_CLASS_INPUT_OUTPUT, // class
+        screen->root_visual, // visual
+        xcb_window_attrib_mask,
+        xcb_window_attrib_list);
+
+    xcb_void_cookie_t map_cookie = xcb_map_window_checked(connection, window);
+
+    // Check errors.
+    error = xcb_request_check(connection, create_cookie);
+    if (error)
+        error_fatal("failed to create X window: %d", error->error_code);
+    error = xcb_request_check(connection, map_cookie);
+    if (error)
+        error_fatal("failed to map X window: %d", error->error_code);
+
+    *out_display = display;
+    *out_connection = connection;
+    *out_window = window;
+}
+
+int
+main() {
+    const char *x_display_name = NULL;
+    Display *x_display;
+    xcb_connection_t* x_connection;
+    int x_screen;
+    xcb_window_t x_window;
+    setup_x(x_display_name,
+            0, 0, // x, y
+            64, 64, // width, height
+            &x_display,
+            &x_connection,
+            &x_screen,
+            &x_window);
+
+    EGLWrapper egl(x_display, x_window);
+
+    glClearColor(1.0, 1.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glFlush();
+
+    TriangleProgram tr;
+    for (int i = 0; ; i++) {
+        glClear(GL_COLOR_BUFFER_BIT);
+        tr.render();
+        egl.swap();
+        usleep(16);
     }
 
-    Display* getDisplay() { return mDisplay; }
-    Window getWindow() { return mWindow; }
-
-    void drawBuffer(uint32_t* buffer) {
-        XImage *img = XCreateImage(mDisplay, nullptr, sDepth, ZPixmap, 0, (char*)buffer,
-                                   mWidth, mHeight, 32, 0);
-        if (not img) {
-            fprintf(stderr, "Creation failed");
-            return;
-        }
-        XPutImage(mDisplay, mPixmap, mGraphicContext, img, 0, 0, 0, 0, mWidth, mHeight);
-        XSetWindowBackgroundPixmap(mDisplay, mWindow, mPixmap);
-        XClearWindow(mDisplay, mWindow);
-        XFlush(mDisplay);
-        XDestroyImage(img);
-    }
-
-private:
-    static constexpr int sDepth = 24;
-    Pixmap mPixmap;
-    Display* mDisplay;
-    Window mRoot;
-    Window mWindow;
-    GC mGraphicContext;
-    uint32_t mWidth;
-    uint32_t mHeight;
-
-};
-
-int main()
-{
-    X11Backend win(600, 600);
-    //Surface* s = new Surface(nullptr, false);
-//    static const EGLint attribs[] = {
-//       EGL_RED_SIZE, 8,
-//       EGL_GREEN_SIZE, 8,
-//       EGL_BLUE_SIZE, 8,
-////       EGL_DOUBLEBUFFER,
-//       EGL_DEPTH_SIZE, 8,
-//       EGL_NONE
-//    };
-
-//    EGLConfig config;
-//    EGLint num_configs, vid;
-
-//    EGLDisplay dpy = eglGetDisplay(win.getDisplay());
-//    eglInitialize(dpy, 0, 0);
-
-//    if (!eglChooseConfig( dpy, attribs, &config, 1, &num_configs)) {
-//       printf("Error: couldn't get an EGL visual config\n");
-//       exit(1);
-//    }
-
-//    if (!eglGetConfigAttrib(dpy, config, EGL_NATIVE_VISUAL_ID, &vid)) {
-//       printf("Error: eglGetConfigAttrib() failed\n");
-//       exit(1);
-//    }
-
-//    EGLContext ctx = eglCreateContext(dpy, config, EGL_NO_CONTEXT, NULL);
-
-//    EGLSurface  surface = eglCreateWindowSurface(dpy, config, win.getWindow(), NULL);
-
-//    eglMakeCurrent(dpy, surface, surface, ctx);
-
-//    win.mPixmap = XCreatePixmap(win.getDisplay(), win.getWindow(),
-//                                600, 600, 8);
-    //XFillRectangle(win.getDisplay(), win.mPixmap, 0xEFEFEF, 0, 0, 600, 600);
-
-//    EGLImageKHR eglImage = eglCreateImageKHR(dpy, ctx, EGL_NATIVE_PIXMAP_KHR, (EGLClientBuffer)win.mPixmap, NULL);
-//    if (eglImage == EGL_NO_IMAGE_KHR) {
-//        printf("Wtf");
-//    }
-
-    //glEGLImageTargetTexture2D(GL_TEXTURE_2D, eglImage);
-
-    uint32_t size = 600 * 600;
-    uint32_t* b = new uint32_t[size];
-
-    while(size--) {
-        b[size] = 0xFFBB00FF;
-    }
-    win.drawBuffer(b);
-    for(;;) {
-
-//      XEvent e;
-//      XNextEvent(win.getDisplay(), &e);
-//      if (e.type == MapNotify)
-//        break;
-//      win.drawBuffer(b);
-      //eglSwapBuffers(dpy, surface);
-    }
 
     return 0;
 }
-
