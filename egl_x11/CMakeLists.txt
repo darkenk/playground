@@ -15,17 +15,20 @@ include_directories(${X11_INCLUDE_DIR})
 
 add_definitions(
     -std=gnu++11
+    -DGLM_FORCE_RADIANS
 )
 
 #aux_source_directory(. SRC_LIST)
+aux_source_directory(. SRC)
 
-add_executable(${PROJECT_NAME} main.cpp eglwrapper.cpp program.cpp triangleprogram.cpp)
+add_executable(${PROJECT_NAME} ${SRC})
 
 #add_executable(demo demo.cpp)
 
 target_link_libraries(${PROJECT_NAME}
     ${X11_LIBRARIES}
     xcb
+    xcb-icccm
     X11-xcb
     GLESv2
     EGL

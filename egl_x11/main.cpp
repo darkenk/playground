@@ -6,10 +6,14 @@
 
 #include <EGL/egl.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_icccm.h>
 #include <X11/Xlib-xcb.h>
 #include <unistd.h>
 #include <GLES2/gl2.h>
 #include "triangleprogram.hpp"
+
+#include <glm/glm.hpp>
+#include <glm/gtx/transform.hpp>
 
 using namespace std;
 
@@ -79,6 +83,20 @@ setup_x(const char *display_name,
         xcb_window_attrib_mask,
         xcb_window_attrib_list);
 
+    xcb_size_hints_t hints;
+
+    xcb_icccm_size_hints_set_min_size(&hints, window_width, window_height);
+    xcb_icccm_size_hints_set_max_size(&hints, window_width, window_height);
+
+    xcb_icccm_set_wm_size_hints(connection, window, XCB_ATOM_WM_NORMAL_HINTS, &hints);
+
+//    XSizeHints* sizeHints = XAllocSizeHints();
+//    sizeHints->flags = PMinSize | PMaxSize;
+//    sizeHints->min_width = sizeHints->max_width = static_cast<int>(window_x);
+//    sizeHints->min_height = sizeHints->max_height = static_cast<int>(window_y);
+//    XSetWMNormalHints(display, window, sizeHints);
+//    XFree(sizeHints);
+
     xcb_void_cookie_t map_cookie = xcb_map_window_checked(connection, window);
 
     // Check errors.
@@ -94,6 +112,63 @@ setup_x(const char *display_name,
     *out_window = window;
 }
 
+#include "drawablefactory.hpp"
+#include "quaddrawable.hpp"
+#include <stack>
+
+class Drawer : public Node::Visitor {
+public:
+    Drawer(const glm::mat4& viewProj): mViewProj(viewProj), mRef(0) {
+        glEnable(GL_STENCIL_TEST);
+        //mLevels.push(mRef);
+        glStencilFunc(GL_EQUAL, mRef, 0xFF);
+        glStencilOp(GL_KEEP, GL_INCR, GL_INCR);
+        mDrawZ = 0.f;
+    }
+    virtual void beforeGoingDown(Node& n) {
+        try {
+            QuadDrawable& q = dynamic_cast<QuadDrawable&>(n);
+            glStencilOp(GL_KEEP, GL_INCR, GL_INCR);
+            q.setViewProj(mViewProj);
+            q.updateModel();
+            q.draw();
+            mDrawZ += (1.f /256.f);
+            mZets.push(mDrawZ);
+            //glDepthFunc(GL_EQUAL);
+            fprintf(stderr, "Down id: %d mRef %d\n", q.id(), mRef);
+            mRef++;
+            glStencilFunc(GL_EQUAL, mRef, 0xFF);
+            //glStencilFunc(GL_EQUAL, 0, 0xFF);
+            mLevels.push(mRef);
+        } catch (std::bad_cast b) {
+
+        }
+    };
+    virtual void beforeGoingUp(Node& n) {
+        try {
+            QuadDrawable& q = dynamic_cast<QuadDrawable&>(n);
+            //mLevels.pop();
+            glStencilOp(GL_KEEP, GL_DECR, GL_DECR);
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+            q.draw();
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            GLint r = --mRef;
+            glStencilFunc(GL_EQUAL, r, 0xFF);
+            fprintf(stderr, "Up id: %d mRef %d\n", q.id(), mRef);
+        } catch (std::bad_cast b) {
+
+        }
+    };
+
+private:
+    glm::mat4 mViewProj;
+    GLint mRef;
+    std::stack<GLint> mLevels;
+
+    GLint mDrawZ;
+    std::stack<GLint> mZets;
+};
+
 int
 main() {
     const char *x_display_name = NULL;
@@ -101,27 +176,52 @@ main() {
     xcb_connection_t* x_connection;
     int x_screen;
     xcb_window_t x_window;
+    const int x = 0;
+    const int y = 0;
+    const int width = 512;
+    const int height = 256;
     setup_x(x_display_name,
-            0, 0, // x, y
-            64, 64, // width, height
+            x, y, // x, y
+            width, height, // width, height
             &x_display,
             &x_connection,
             &x_screen,
             &x_window);
 
     EGLWrapper egl(x_display, x_window);
+    glViewport(0, 0, width, height);
+    DrawableFactory df;
+    Node rootNode;
+    auto p = df.createDrawable<QuadDrawable>(glm::vec4(1.0, 0.0, 0.0, 1.0f));
+    p->setPosition(glm::vec3(12, 100, 10.0));
+    rootNode.addChild(p);
+
+    p = df.createDrawable<QuadDrawable>(glm::vec4(0.0, 1.0, 0.0, 1.0f));
+    p->setPosition(glm::vec3(19, 115, 10.0));
+    rootNode.addChild(p);
+
+    auto n = df.createDrawable<QuadDrawable>(glm::vec4(0.0, 0.0, 1.0, 1.0f));
+    n->setPosition(glm::vec3(40, 105, 10.0));
+    p->addChild(n);
+
+    p = df.createDrawable<QuadDrawable>(glm::vec4(0.0, 1.0, 0.0, 1.0f));
+    p->setPosition(glm::vec3(0, 200, 10.0));
+    rootNode.addChild(p);
 
     glClearColor(1.0, 1.0, 0.0, 1.0);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glFlush();
+    glEnable(GL_STENCIL_TEST);
+    glClearStencil(0x00);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    glEnable(GL_BLEND);
+    //glEnable(GL_DEPTH_TEST);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-    TriangleProgram tr;
-    for (int i = 0; ; i++) {
-        glClear(GL_COLOR_BUFFER_BIT);
-        tr.render();
-        egl.swap();
-        usleep(16);
-    }
+    auto view = glm::ortho<float>(width, x, height, y, 1.0f, 100.f);
+    auto proj = glm::lookAt(glm::vec3(0.f, 0.f, -1.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+    Drawer d(proj * view);
+    rootNode.traverse(d);
+    egl.swap();
+    usleep(1600000);
 
 
     return 0;
