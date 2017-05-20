@@ -1,8 +1,8 @@
 #ifndef DRAWABLEFACTORY_HPP
 #define DRAWABLEFACTORY_HPP
 
-#include "program.hpp"
 #include <memory>
+#include "program.hpp"
 
 class DrawableFactory
 {

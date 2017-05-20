@@ -114,9 +114,10 @@ setup_x(const char *display_name,
 
 #include "drawablefactory.hpp"
 #include "quaddrawable.hpp"
+#include "quadtexture.hpp"
 #include <stack>
 
-class Drawer : public Node::Visitor {
+class Drawer : public Node<QuadDrawable>::Visitor {
 public:
     Drawer(const glm::mat4& viewProj): mViewProj(viewProj), mRef(0) {
         glEnable(GL_STENCIL_TEST);
@@ -125,39 +126,28 @@ public:
         glStencilOp(GL_KEEP, GL_INCR, GL_INCR);
         mDrawZ = 0.f;
     }
-    virtual void beforeGoingDown(Node& n) {
-        try {
-            QuadDrawable& q = dynamic_cast<QuadDrawable&>(n);
-            glStencilOp(GL_KEEP, GL_INCR, GL_INCR);
-            q.setViewProj(mViewProj);
-            q.updateModel();
-            q.draw();
-            mDrawZ += (1.f /256.f);
-            mZets.push(mDrawZ);
-            //glDepthFunc(GL_EQUAL);
-            fprintf(stderr, "Down id: %d mRef %d\n", q.id(), mRef);
-            mRef++;
-            glStencilFunc(GL_EQUAL, mRef, 0xFF);
-            //glStencilFunc(GL_EQUAL, 0, 0xFF);
-            mLevels.push(mRef);
-        } catch (std::bad_cast b) {
-
-        }
+    virtual void beforeGoingDown(QuadDrawable& q) {
+        glStencilOp(GL_KEEP, GL_INCR, GL_INCR);
+        q.setViewProj(mViewProj);
+        q.updateModel();
+        q.draw();
+        mDrawZ += (1.f /256.f);
+        mZets.push(mDrawZ);
+        //glDepthFunc(GL_EQUAL);
+        fprintf(stderr, "Down id: %d mRef %d\n", q.id(), mRef);
+        mRef++;
+        glStencilFunc(GL_EQUAL, mRef, 0xFF);
+        //glStencilFunc(GL_EQUAL, 0, 0xFF);
+        mLevels.push(mRef);
     };
-    virtual void beforeGoingUp(Node& n) {
-        try {
-            QuadDrawable& q = dynamic_cast<QuadDrawable&>(n);
-            //mLevels.pop();
-            glStencilOp(GL_KEEP, GL_DECR, GL_DECR);
-            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-            q.draw();
-            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-            GLint r = --mRef;
-            glStencilFunc(GL_EQUAL, r, 0xFF);
-            fprintf(stderr, "Up id: %d mRef %d\n", q.id(), mRef);
-        } catch (std::bad_cast b) {
-
-        }
+    virtual void beforeGoingUp(QuadDrawable& q) {
+        glStencilOp(GL_KEEP, GL_DECR, GL_DECR);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        q.draw();
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        GLint r = --mRef;
+        glStencilFunc(GL_EQUAL, r, 0xFF);
+        fprintf(stderr, "Up id: %d mRef %d\n", q.id(), mRef);
     };
 
 private:
@@ -191,22 +181,22 @@ main() {
     EGLWrapper egl(x_display, x_window);
     glViewport(0, 0, width, height);
     DrawableFactory df;
-    Node rootNode;
+    Node<QuadDrawable> rootNode();
     auto p = df.createDrawable<QuadDrawable>(glm::vec4(1.0, 0.0, 0.0, 1.0f));
     p->setPosition(glm::vec3(12, 100, 10.0));
-    rootNode.addChild(p);
+//    rootNode.addChild(p);
 
     p = df.createDrawable<QuadDrawable>(glm::vec4(0.0, 1.0, 0.0, 1.0f));
     p->setPosition(glm::vec3(19, 115, 10.0));
-    rootNode.addChild(p);
+    //rootNode.addChild(p);
 
     auto n = df.createDrawable<QuadDrawable>(glm::vec4(0.0, 0.0, 1.0, 1.0f));
     n->setPosition(glm::vec3(40, 105, 10.0));
     p->addChild(n);
 
-    p = df.createDrawable<QuadDrawable>(glm::vec4(0.0, 1.0, 0.0, 1.0f));
-    p->setPosition(glm::vec3(0, 200, 10.0));
-    rootNode.addChild(p);
+    auto s = df.createDrawable<QuadTexture>(glm::vec4(0.0, 1.0, 0.0, 1.0f));
+    s->setPosition(glm::vec3(0, 200, 10.0));
+    //rootNode.addChild(p);
 
     glClearColor(1.0, 1.0, 0.0, 1.0);
     glEnable(GL_STENCIL_TEST);
@@ -218,8 +208,11 @@ main() {
 
     auto view = glm::ortho<float>(width, x, height, y, 1.0f, 100.f);
     auto proj = glm::lookAt(glm::vec3(0.f, 0.f, -1.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 1.f, 0.f));
-    Drawer d(proj * view);
-    rootNode.traverse(d);
+//    Drawer d(proj * view);
+//    rootNode.traverse(d);
+    s->setViewProj(proj * view);
+    s->updateModel();
+    s->draw();
     egl.swap();
     usleep(1600000);
 

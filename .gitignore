@@ -30,3 +30,6 @@
 *.creator.user
 CMakeLists.txt.user
 *.autosave
+*-build
+build
+.build

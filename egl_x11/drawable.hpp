@@ -7,25 +7,24 @@
 
 class DrawableFactory;
 
-class Node;
-
+template<typename T>
 class Node {
 public:
     class Visitor {
     public:
-        virtual void beforeGoingDown(Node& d) = 0;
-        virtual void beforeGoingUp(Node& d) = 0;
+        virtual void beforeGoingDown(T& d) = 0;
+        virtual void beforeGoingUp(T& d) = 0;
     };
 
     class LevelVisitor {
     public:
-        virtual void execute(std::vector<std::shared_ptr<Node>> childs) = 0;
+        virtual void execute(std::vector<std::shared_ptr<T>> childs) = 0;
     };
 
     Node(): mParent(nullptr) {}
     virtual ~Node() {};
 
-    void addChild(std::shared_ptr<Node> child) {
+    virtual void addChild(std::shared_ptr<Node<T>> child) {
         mChildren.push_back(child);
         child->mParent = this;
     }
@@ -46,12 +45,12 @@ public:
     }
 
 private:
-    std::vector<std::shared_ptr<Node>> mChildren;
-    Node* mParent;
+    std::vector<std::shared_ptr<Node<T>>> mChildren;
+    Node<T>* mParent;
 };
 
 template<typename ProgramType>
-class DKDrawable : public Node {
+class DKDrawable : public Node<DKDrawable<ProgramType>> {
 public:
     DKDrawable() {}
     virtual void draw() = 0;
