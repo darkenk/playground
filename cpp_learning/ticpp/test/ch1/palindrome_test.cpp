@@ -4,11 +4,12 @@ bool isPalindrome(const std::string& str) {
     if (str.empty()) {
         return false;
     }
-    unsigned long diff = 0;
-    for (unsigned long i = 0; i < str.size()/2; i++) {
-        diff += str.at(i) != str.at(str.size()-(i+1));
+    for (std::string::size_type i = 0; i < str.size()/2; i++) {
+        if (str.at(i) != str.at(str.size()-(i+1))) {
+            return false;
+        }
     }
-    return diff == 0;
+    return true;
 }
 
 TEST(Palindrome, empty_string_is_not_palindrome) {
