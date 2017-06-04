@@ -1,86 +1,70 @@
+/*
+Open a file by creating an ifstream object called in. Make an ostrstream
+object called os, and read the entire contents into the ostrstream using the
+rdbuf( ) member function. Get the address of os’s char* with the str( )
+function, and capitalize every character in the file using the Standard C
+toupper( ) macro. Write the result out to a new file, and delete the memory
+allocated by os.
+*/
 #include <gtest/gtest.h>
-#include <gmock/gmock.h>
+#include "fakefstream.hpp"
 
-#include <fstream>
-#include <map>
-
-class FakeOFstream : public std::stringstream {
-public:
-    FakeOFstream(const std::string& fileName,
-           ios_base::openmode mode = ios_base::out|ios_base::trunc) {
-        mFileName = fileName;
-        sFileContent[mFileName];
-        if (mode | ios_base::trunc) {
-            sFileContent[mFileName].clear();
-        } else {
-            str(sFileContent[mFileName]);
-        }
-    }
-    ~FakeOFstream() {
-        sFileContent[mFileName].append(str());
-    }
-
-    static std::string& getFileContent(const std::string& fileName) {
-        return sFileContent[fileName];
-    }
-
-private:
-    std::string mFileName;
-    thread_local static std::map<std::string, std::string> sFileContent;
+class Toupper : public ::testing::Test {
+protected:
+     virtual void TearDown() {
+        FakeFstream::clear();
+     }
 };
-
-class FakeIFstream : public std::stringstream {
-public:
-    FakeIFstream(const std::string& fileName, ios_base::openmode /*mode*/ = ios_base::in) {
-        *this << sFileContent[fileName];
-    }
-    ~FakeIFstream() {
-    }
-
-    static void setFileContent(const std::string& fileName, const std::string& content) {
-        sFileContent[fileName] = content;
-    }
-
-private:
-    thread_local static std::map<std::string, std::string> sFileContent;
-};
-
-thread_local std::map<std::string, std::string> FakeOFstream::sFileContent;
-thread_local std::map<std::string, std::string> FakeIFstream::sFileContent;
 
 template<class outstream = std::ofstream, class instream = std::ifstream>
-void toupper(const std::string& inFile, const std::string& outFile) {
+bool toupper(const std::string& inFile, const std::string& outFile) {
     instream in(inFile);
     outstream out(outFile);
+    if (in.fail() || out.fail()) {
+        return false;
+    }
     std::transform(std::istream_iterator<char>(in), std::istream_iterator<char>(),
                    std::ostream_iterator<char>(out), [](char c) { return std::toupper(c); });
+    return true;
 }
 
-void (*toupper_test)(const std::string&, const std::string&) = &toupper<FakeOFstream, FakeIFstream>;
+bool (*toupper_test)(const std::string&, const std::string&) = &toupper<FakeOFstream, FakeIFstream>;
 
-//TEST(Toupper, does_it_compile_with_fstream) {
-    template void toupper(const std::string&, const std::string&);
+//TEST_F(Toupper, does_it_compile_with_fstream) {
+    template bool toupper(const std::string&, const std::string&);
 //}
 
-TEST(Toupper, create_empty_file_for_empty_file) {
+TEST_F(Toupper, create_empty_file_for_empty_file) {
     toupper_test("empty_file", "new_file");
     EXPECT_EQ(FakeOFstream::getFileContent("new_file"), "");
 }
 
-TEST(Toupper, copy_upper_case_file) {
+TEST_F(Toupper, copy_upper_case_file) {
     FakeIFstream::setFileContent("input_file", "AA");
     toupper_test("input_file", "out_file");
     EXPECT_EQ(FakeOFstream::getFileContent("out_file"), "AA");
 }
 
-TEST(Toupper, change_to_upper_case_file_aa) {
+TEST_F(Toupper, change_to_upper_case_file_aa) {
     FakeIFstream::setFileContent("input_file", "aa");
     toupper_test("input_file", "out_file");
     EXPECT_EQ(FakeOFstream::getFileContent("out_file"), "AA");
 }
 
-TEST(Toupper, change_to_upper_case_file_aA) {
+TEST_F(Toupper, change_to_upper_case_file_aA) {
     FakeIFstream::setFileContent("input_file", "aA");
     toupper_test("input_file", "out_file");
     EXPECT_EQ(FakeOFstream::getFileContent("out_file"), "AA");
+}
+
+TEST_F(Toupper, no_input_file_returns_false) {
+    FakeFstream::setNoFile("input_file");
+    bool ret = toupper_test("input_file", "out_file");
+    EXPECT_FALSE(ret);
+}
+
+TEST_F(Toupper, no_output_file_returns_false) {
+    FakeFstream::setNoFile("out_file");
+    bool ret = toupper_test("input_file", "out_file");
+    EXPECT_FALSE(ret);
 }
