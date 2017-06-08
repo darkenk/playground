@@ -15,17 +15,17 @@ protected:
      }
 };
 
-template<class ostream = std::ofstream>
+template<class ostream = std::ofstream, class istream = std::ifstream>
 void copyright(const std::string& fileName, const std::string& copyrightPattern) {
-    ostream out(fileName, std::ios_base::out);
-    out << copyrightPattern;
-//    << in.rdbuf();
+    istream in(fileName);
+    ostream out(fileName);
+    out <<  copyrightPattern << std::endl << in.rdbuf();
 }
 
-void (*copyright_test)(const std::string&, const std::string&) = &copyright<FakeOFstream>;
+void (*copyright_test)(const std::string&, const std::string&) = &copyright<FakeOFstream, FakeIFstream>;
 
 TEST_F(Copyright, append_text_to_file) {
     FakeIFstream::setFileContent(input_file, "aa");
     copyright_test(input_file, "bb");
-    EXPECT_EQ("bb\naa", FakeIFstream::getFileContent(input_file));
+    EXPECT_EQ("bb\naa", FakeOFstream::getFileContent(input_file));
 }
