@@ -6,3 +6,4 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-missing-prototypes -Wno-missing-var
 
 add_subdirectory(ch1)
 add_subdirectory(ch2)
+add_subdirectory(ch4)
